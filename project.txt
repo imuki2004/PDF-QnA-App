@@ -1,0 +1,9 @@
+Stack:
+VectorDB: qdrant (langchain)
+Embeddings: deepseek-r1 8b (langchain-ollama)
+Model: deepseek-r1 8b (langchain-ollama)
+
+Design:
+PDF Preprocessing: load_pdf, split_text(chunking), indexing
+Document Retrieval: retriving relevant docs
+Answering the Question: prompt (with context)
