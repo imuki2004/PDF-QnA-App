@@ -1,6 +1,7 @@
-import os
+import logging
+from typing import List
+
 import streamlit as st
-from dotenv import load_dotenv
 from langchain_qdrant import QdrantVectorStore
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams
@@ -10,23 +11,23 @@ from langchain_ollama.llms import OllamaLLM
 from langchain_community.document_loaders import PDFPlumberLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-load_dotenv()
-QDRANT_URL = os.getenv("URL")
-QDRANT_API_KEY = os.getenv("API_KEY")
-
-pdfs_directory = "./pdfs/"
-template = """
-    You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question.
-    If you don't know the answer, just say that you don't know.
-    Keep the answer clear and concise.
-    Question: {question}
-    Context: {context}
-    Answer:
+PDFS_DIRECTORY = "./pdfs/"
+CHAT_TEMPLATE = """
+You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question.
+If you don't know the answer, just say that you don't know.
+Keep the answer short and concise.
+Question: {question}
+Context: {context}
+Answer:
 """
+CHUNK_SIZE = 1000
+CHUNK_OVERLAP = 200
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 embeddings = OllamaEmbeddings(model="deepseek-r1:8b")
 model = OllamaLLM(model="deepseek-r1:8b")
-
 client = QdrantClient(":memory:")
 
 client.create_collection(
@@ -40,64 +41,134 @@ vector_store = QdrantVectorStore(
     embedding=embeddings,
 )
 
-def upload_pdf(file):
-    with open(pdfs_directory + file.name, "wb") as f:
-        f.write(file.getbuffer())
-        
-def load_pdf(file_path):
+
+def save_uploaded_pdf(uploaded_file) -> str:
+    """
+    Save the uploaded PDF to the PDFs directory.
+    
+    Parameters:
+        uploaded_file: The file object uploaded via Streamlit.
+    
+    Returns:
+        The file path of the saved PDF.
+    """
+    file_path = os.path.join(PDFS_DIRECTORY, uploaded_file.name)
+    try:
+        with open(file_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        logger.info(f"Saved file to {file_path}")
+    except Exception as e:
+        logger.error(f"Failed to save file: {e}")
+        raise
+    return file_path
+
+
+def load_pdf_documents(file_path: str) -> List:
+    """
+    Load documents from a PDF file.
+    
+    Parameters:
+        file_path (str): Path to the PDF file.
+    
+    Returns:
+        List of documents loaded from the PDF.
+    """
     loader = PDFPlumberLoader(file_path)
     documents = loader.load()
-    
+    logger.info(f"Loaded {len(documents)} document(s) from {file_path}")
     return documents
 
-def split_text(documents):
+
+def split_documents(documents: List) -> List:
+    """
+    Split documents into smaller chunks.
+    
+    Parameters:
+        documents (List): List of documents.
+    
+    Returns:
+        List of document chunks.
+    """
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200,
+        chunk_size=CHUNK_SIZE,
+        chunk_overlap=CHUNK_OVERLAP,
         add_start_index=True
     )
-    
-    return text_splitter.split_documents(documents)
-    
-def index_docs(documents):
-    vector_store.add_documents(documents)
+    chunks = text_splitter.split_documents(documents)
+    logger.info(f"Split documents into {len(chunks)} chunks")
+    return chunks
 
-def retrieve_docs(query):
-    results = vector_store.similarity_search(
-        query, k=5 
-    )
+
+def index_documents(documents: List) -> None:
+    """
+    Add document chunks to the vector store.
     
+    Parameters:
+        documents (List): List of document chunks.
+    """
+    vector_store.add_documents(documents)
+    logger.info("Indexed documents in vector store")
+
+
+def retrieve_relevant_docs(query: str, k: int = 2) -> List:
+    """
+    Retrieve documents relevant to the query.
+    
+    Parameters:
+        query (str): The search query.
+        k (int): Number of similar documents to retrieve.
+    
+    Returns:
+        List of relevant document chunks.
+    """
+    results = vector_store.similarity_search(query, k=k)
+    logger.info(f"Retrieved {len(results)} relevant document(s) for query")
     return results
 
-def answer_question(question, documents):
-    context = "\n\n".join([doc.page_content for doc in documents])
-    prompt = ChatPromptTemplate.from_template(template)
+
+def generate_answer(question: str, documents: List) -> str:
+    """
+    Generate an answer based on the question and document context.
+    
+    Parameters:
+        question (str): The user's question.
+        documents (List): List of document chunks for context.
+    
+    Returns:
+        Generated answer as a string.
+    """
+    context = "\n\n".join(doc.page_content for doc in documents)
+    prompt = ChatPromptTemplate.from_template(CHAT_TEMPLATE)
     chain = prompt | model
-    
-    return chain.invoke({"question": question, "context": context})
+    answer = chain.invoke({"question": question, "context": context})
+    logger.info("Generated answer for the question")
+    return answer
 
-st.title('Chat with your PDF 📑')
 
-uploaded_file = st.file_uploader(
-    "Upload a PDF", 
-    type=["pdf"],
-    accept_multiple_files=False
-)
+def main():
+    """Main function to run the Streamlit app."""
+    st.title('Chat with your PDF 📑')
+    
+    uploaded_file = st.file_uploader("Upload a PDF", type=["pdf"], accept_multiple_files=False)
+    
+    if uploaded_file:
+        try:
+            pdf_path = save_uploaded_pdf(uploaded_file)
+            documents = load_pdf_documents(pdf_path)
+            chunks = split_documents(documents)
+            index_documents(chunks)
+        except Exception as e:
+            st.error(f"Error processing PDF: {e}")
+            return
 
-if uploaded_file:
-    upload_pdf(uploaded_file)
-    documents = load_pdf(pdfs_directory + uploaded_file.name)
-    chunks = split_text(documents)
-    index_docs(chunks)
-    
-    question = st.chat_input()
-    
-    if question:
-        st.chat_message("user").write(question)
-        related_docs = retrieve_docs(question)
-        answer = answer_question(question, chunks)
-        st.chat_message("assistant").write(answer)
+        question = st.chat_input("Ask a question about your PDF:")
         
+        if question:
+            st.chat_message("user").write(question)
+            relevant_docs = retrieve_relevant_docs(question)
+            answer = generate_answer(question, relevant_docs)
+            st.chat_message("assistant").write(answer)
 
 
-    
+if __name__ == "__main__":
+    main()
