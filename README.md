@@ -58,9 +58,7 @@ Before running the project, ensure you have the following installed:
 
 ## Project Structure
 
-    ```bash
     ├── app.py               # Streamlit UI for the application
     ├── rag.py               # Contains functions for PDF processing, indexing, retrieval, and answer generation
     ├── requirements.txt     # Python dependencies
     └── README.md            # This file
-    ```
