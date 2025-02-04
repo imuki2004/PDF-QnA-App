@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import List
 
 import streamlit as st
@@ -20,8 +21,6 @@ Question: {question}
 Context: {context}
 Answer:
 """
-CHUNK_SIZE = 1000
-CHUNK_OVERLAP = 200
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -90,8 +89,8 @@ def split_documents(documents: List) -> List:
         List of document chunks.
     """
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=CHUNK_SIZE,
-        chunk_overlap=CHUNK_OVERLAP,
+        chunk_size=1000,
+        chunk_overlap=200,
         add_start_index=True
     )
     chunks = text_splitter.split_documents(documents)
@@ -143,32 +142,3 @@ def generate_answer(question: str, documents: List) -> str:
     answer = chain.invoke({"question": question, "context": context})
     logger.info("Generated answer for the question")
     return answer
-
-
-def main():
-    """Main function to run the Streamlit app."""
-    st.title('Chat with your PDF 📑')
-    
-    uploaded_file = st.file_uploader("Upload a PDF", type=["pdf"], accept_multiple_files=False)
-    
-    if uploaded_file:
-        try:
-            pdf_path = save_uploaded_pdf(uploaded_file)
-            documents = load_pdf_documents(pdf_path)
-            chunks = split_documents(documents)
-            index_documents(chunks)
-        except Exception as e:
-            st.error(f"Error processing PDF: {e}")
-            return
-
-        question = st.chat_input("Ask a question about your PDF:")
-        
-        if question:
-            st.chat_message("user").write(question)
-            relevant_docs = retrieve_relevant_docs(question)
-            answer = generate_answer(question, relevant_docs)
-            st.chat_message("assistant").write(answer)
-
-
-if __name__ == "__main__":
-    main()
