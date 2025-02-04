@@ -91,7 +91,7 @@ def main():
 
     if st.button("Clear Chat"):
         st.session_state.conversation = []
-        st.experimental_rerun()
+        st.rerun()
 
 
 if __name__ == "__main__":

@@ -2,6 +2,8 @@
 
 A Streamlit application that allows you to interactively chat with the contents of your PDFs. The app leverages a Retrieval-Augmented Generation (RAG) approach using a local [Ollama](https://ollama.com/library/deepseek-r1:8b) model (`deepseek-r1:8b`) for natural language processing along with Qdrant for vector storage and similarity search.
 
+![Application Screenshot](media/functioning-app-page.png)
+
 ## Features
 
 - **Upload & Process PDFs:** Easily upload PDFs, which are then processed and indexed.
